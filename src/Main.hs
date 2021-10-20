@@ -3,6 +3,7 @@ module Main where
 import qualified Data.IntMap as M
 import qualified Data.Sequence as S
 import Control.Monad (replicateM)
+import Control.Monad.Trans.State.Lazy
 
 type Index = Int
 data Termination = Accept | Reject | Break deriving (Eq, Ord, Show, Read)
@@ -36,8 +37,8 @@ threeWayScanner redDest blueDest (otherColor, otherDest) =
           ]
 
 scanner1, scanner2, scanner3, scanner4 :: Scanner
-scanner1 red blue other = twoWayScanner (Red, red) (Blue, blue) other
-scanner2 green yellow other = twoWayScanner (Green, green) (Yellow, yellow) other
+scanner1 red blue = twoWayScanner (Red, red) (Blue, blue)
+scanner2 green yellow = twoWayScanner (Green, green) (Yellow, yellow)
 scanner3 red blue green = threeWayScanner red blue (Green, green)
 scanner4 red blue yellow = threeWayScanner red blue (Yellow, yellow)
 
