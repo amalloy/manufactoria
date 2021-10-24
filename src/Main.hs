@@ -1,17 +1,34 @@
+{-# LANGUAGE TupleSections #-}
+
 module Main where
 
 import qualified Data.IntMap as M
-import qualified Data.Sequence as S
+import qualified Data.Sequence as Seq
+import qualified Data.Set as S
+import Control.Applicative ((<|>))
 import Control.Monad (replicateM)
 import Control.Monad.Trans.State.Lazy
+import Control.Monad.Trans.Reader
+import Control.Monad.Trans.Class
+import Data.Foldable (toList)
+import Data.Monoid (Alt(..))
 
 type Index = Int
 data Termination = Accept | Reject | Break deriving (Eq, Ord, Show, Read)
 data Destination = Terminate Termination | Goto Index deriving (Eq, Ord, Show, Read)
+data ProblemStatement = ProblemStatement { permittedExits :: [Termination]
+                                         , inputColors, stampColors :: [Color]
+                                         , allScannersHaveWhiteArrow :: Bool
+                                         }
 
 data Color = Red | Blue | Green | Yellow deriving (Enum, Eq, Ord, Show, Read)
 data ArrowColor = AnyColor | ColoredArrow Color deriving (Eq, Ord, Show, Read)
-type Tape = S.Seq Color
+type Tape = Seq.Seq Color
+
+data Directed a = Directed Destination a
+data Three a = Three { left, straight, right :: a }
+data Node stamper scanner = OneWay (Directed stamper) | ThreeWay (Three (Directed stamper))
+data Indexed a = Indexed Index a
 
 data ScanResult = ScanResult {consume :: Bool, next :: Destination} deriving (Eq, Ord, Show, Read)
 data Arrow = Arrow ArrowColor ScanResult deriving (Eq, Ord, Show, Read)
@@ -58,6 +75,44 @@ chooseScanner exits scanners maxState = do
 
 chooseStamper :: [Termination] -> [Color] -> Index -> [Transition]
 chooseStamper exits colors maxState = Stamp <$> colors <*> outcome exits maxState
+
+first :: Foldable f => f a -> Maybe a
+first = getAlt . foldMap (Alt . Just)
+
+data LayoutState = LayoutState { pending, placed, open :: S.Set Index }
+type Search a = ReaderT ProblemStatement [] a
+
+layouts :: Int -> Search [Indexed (Node () ())]
+layouts n = go $ LayoutState (S.singleton 0) mempty mempty
+  where go state = case first (pending state) of
+          Nothing -> pure []
+          Just nodeIndex -> do
+            let state' = state { pending = S.delete nodeIndex (pending state)
+                               , placed = S.insert nodeIndex (placed state)
+                               }
+            (state'', object) <- layoutScanner state' <|> layoutStamper state' nodeIndex
+            (Indexed nodeIndex object :) <$> go state''
+
+layoutStamper :: LayoutState -> Index -> Search (LayoutState, Node () ())
+layoutStamper state self = fmap (fmap plainStamper) (reuse <|> placeNew)
+  where plainStamper dst = OneWay (Directed dst ())
+        reuse :: Search (LayoutState, Destination)
+        reuse = (state,) <$> do
+          exits <- asks permittedExits
+          lift $ [Goto dst | dst <- toList (pending state) ++ toList (placed state)
+                           , dst /= self] -- self-pointing scanners are never productive
+            <|> [Terminate exit | exit <- exits]
+        placeNew = lift $ do
+          let opens = open state
+          dst <- toList opens
+          pure (state { pending = S.insert dst (pending state)
+                      , open = S.delete dst opens
+                      }
+                , Goto dst)
+
+
+layoutScanner :: LayoutState -> Search (LayoutState, Node () ())
+layoutScanner = _
 
 main :: IO ()
 main = interact $ (show . length . factoriesUsing [Accept] [Red, Blue] [scanner1] . read)
