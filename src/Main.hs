@@ -60,23 +60,6 @@ scanner2 green yellow = twoWayScanner (Green, green) (Yellow, yellow)
 scanner3 red blue green = threeWayScanner red blue (Green, green)
 scanner4 red blue yellow = threeWayScanner red blue (Yellow, yellow)
 
-factoriesUsing :: [Termination] -> [Color] -> [Scanner] -> Index -> [Factory]
-factoriesUsing terminations colors scanners maxState = do
-  fmap (M.fromList . zip [0..maxState]) . replicateM (maxState + 1)
-  $ chooseScanner terminations scanners maxState ++ chooseStamper terminations colors maxState
-
-outcome :: [Termination] -> Index -> [Destination]
-outcome exits maxState = map Terminate exits ++ map Goto [0..maxState]
-
-chooseScanner :: [Termination] -> [Scanner] -> Index -> [Transition]
-chooseScanner exits scanners maxState = do
-  [left, right, straight] <- replicateM 3 $ outcome exits maxState
-  scanner <- scanners
-  pure (Scan (scanner left right straight))
-
-chooseStamper :: [Termination] -> [Color] -> Index -> [Transition]
-chooseStamper exits colors maxState = Stamp <$> colors <*> outcome exits maxState
-
 first :: Foldable f => f a -> Maybe a
 first = getAlt . foldMap (Alt . Just)
 
