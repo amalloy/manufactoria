@@ -18,3 +18,4 @@ executable manufactoria
   build-depends:       base >= 4.7 && < 5
                      , containers
                      , transformers
+                     , lens

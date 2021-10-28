@@ -1,4 +1,8 @@
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 
 module Main where
 
@@ -10,6 +14,7 @@ import Control.Monad (replicateM, guard)
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class
+import Control.Lens hiding (Index, Indexed)
 import Data.Foldable (toList)
 import Data.Monoid (Alt(..))
 
@@ -25,15 +30,19 @@ data Color = Red | Blue | Green | Yellow deriving (Enum, Eq, Ord, Show, Read)
 data ArrowColor = AnyColor | ColoredArrow Color deriving (Eq, Ord, Show, Read)
 type Tape = Seq.Seq Color
 
-data Directed a = Directed Destination a deriving (Eq, Ord, Show, Read)
-data Three a = Three { left, straight, right :: a } deriving (Eq, Ord, Show, Read)
+data Directed a = Directed Destination a deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
+data Three a = Three { _left, _straight, _right :: a } deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
+makeLenses ''Three
 data Node stamper scanner = OneWay (Directed stamper) | ThreeWay (Three (Directed stamper))
                           deriving (Eq, Ord, Show, Read)
-data Indexed a = Indexed Index a deriving (Eq, Ord, Show, Read)
+data Indexed a = Indexed Index a deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
+makeLenses ''Indexed
 
-data ScanResult = ScanResult {consume :: Bool, next :: Destination} deriving (Eq, Ord, Show, Read)
+data ScanResult = ScanResult {_consume :: Bool, _next :: Destination} deriving (Eq, Ord, Show, Read)
+makeLenses ''ScanResult
 data Arrow = Arrow ArrowColor ScanResult deriving (Eq, Ord, Show, Read)
-data Decider = Decider [Arrow] deriving (Eq, Ord, Show, Read)
+newtype Decider = Decider {_arrows :: [Arrow]} deriving (Eq, Ord, Show, Read)
+makeLenses ''Decider
 data Transition = Stamp Color Destination | Scan Decider deriving (Eq, Ord, Show, Read)
 
 type Factory = M.IntMap Transition
@@ -43,15 +52,15 @@ type ScannerArrow = (Color, Destination)
 
 twoWayScanner :: ScannerArrow -> ScannerArrow -> Destination -> Decider
 twoWayScanner (leftColor, leftDest) (rightColor, rightDest) defaultDest =
-  Decider [ Arrow (ColoredArrow leftColor) $ ScanResult { consume = True, next = leftDest }
-          , Arrow (ColoredArrow rightColor) $ ScanResult { consume = True, next = rightDest }
-          , Arrow AnyColor $ ScanResult { consume = False, next = defaultDest }
+  Decider [ Arrow (ColoredArrow leftColor) $ ScanResult { _consume = True, _next = leftDest }
+          , Arrow (ColoredArrow rightColor) $ ScanResult { _consume = True, _next = rightDest }
+          , Arrow AnyColor $ ScanResult { _consume = False, _next = defaultDest }
           ]
 threeWayScanner :: Destination -> Destination -> ScannerArrow -> Decider
 threeWayScanner redDest blueDest (otherColor, otherDest) =
-  Decider [ Arrow (ColoredArrow Red) $ ScanResult {consume = True, next = redDest}
-          , Arrow (ColoredArrow Blue) $ ScanResult {consume = True, next = blueDest}
-          , Arrow (ColoredArrow otherColor) $ ScanResult {consume = True, next = otherDest}
+  Decider [ Arrow (ColoredArrow Red) $ ScanResult {_consume = True, _next = redDest}
+          , Arrow (ColoredArrow Blue) $ ScanResult {_consume = True, _next = blueDest}
+          , Arrow (ColoredArrow otherColor) $ ScanResult {_consume = True, _next = otherDest}
           ]
 
 scanner1, scanner2, scanner3, scanner4 :: Scanner
@@ -63,20 +72,20 @@ scanner4 red blue yellow = threeWayScanner red blue (Yellow, yellow)
 first :: Foldable f => f a -> Maybe a
 first = getAlt . foldMap (Alt . Just)
 
-data LayoutState = LayoutState { pending, placed, open :: S.Set Index }
+data LayoutState = LayoutState { _pending, _placed, _open :: S.Set Index }
+makeLenses ''LayoutState
 type Search a = ReaderT ProblemStatement [] a
 
 layouts :: Int -> Search [Indexed (Node () ())]
-layouts n = go $ LayoutState { pending = S.singleton 0
-                             , placed = mempty
-                             , open = S.fromList [1..n]
+layouts n = go $ LayoutState { _pending = S.singleton 0
+                             , _placed = mempty
+                             , _open = S.fromList [1..n]
                              }
-  where go state = case first (pending state) of
+  where go state = case first (view pending state) of
           Nothing -> pure []
           Just nodeIndex -> do
-            let state' = state { pending = S.delete nodeIndex (pending state)
-                               , placed = S.insert nodeIndex (placed state)
-                               }
+            let state' = state & over pending (S.delete nodeIndex)
+                               & over placed (S.insert nodeIndex)
             (state'', object) <- layoutScanner state' nodeIndex <|> layoutStamper state' nodeIndex
             (Indexed nodeIndex object :) <$> go state''
 
@@ -86,15 +95,14 @@ allowedExits = do
   lift $ Terminate <$> exits
 
 reachable :: LayoutState -> [Index]
-reachable state = toList (pending state) ++ toList (placed state)
+reachable state = toList (_pending state) ++ toList (_placed state)
 
 explore :: LayoutState -> Search (LayoutState, Destination)
 explore state = lift $ do
-  let opens = open state
+  let opens = _open state
   dst <- toList opens
-  pure (state { pending = S.insert dst (pending state)
-              , open = S.delete dst opens
-              }
+  pure (state & over pending (S.insert dst)
+              & over open (S.delete dst)
         , Goto dst)
 
 
