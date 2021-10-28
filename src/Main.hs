@@ -127,6 +127,9 @@ layoutScanner state self = do
           where reuse :: Search Destination
                 reuse = allowedExits <|> lift [Goto dst | dst <- reachable state]
 
+-- colorings :: [Indexed (Node () ())] -> Search [Indexed (Node Color ArrowColor)]
+-- colorings = mapM colorObject
+--   where colorObject
 
 main :: IO ()
 main = interact $ (show . length . flip runReaderT (ProblemStatement [Accept] [] [] True) . layouts . read)
