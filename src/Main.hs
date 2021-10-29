@@ -114,7 +114,7 @@ layoutStamper state self = fmap (fmap plainStamper) (reuse <|> explore state)
         reuse = (state,) <$>
                 (allowedExits <|>
                  lift [Goto dst | dst <- reachable state
-                                , dst /= self]) -- self-pointing scanners are never productive)
+                                , dst /= self]) -- self-pointing scanners are never productive
 
 layoutScanner :: LayoutState -> Index -> Search (LayoutState, Node () ())
 layoutScanner state self = do
