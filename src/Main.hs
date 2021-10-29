@@ -23,7 +23,7 @@ type Index = Int
 data Termination = Accept | Reject | Break deriving (Eq, Ord, Show, Read)
 data Destination = Terminate Termination | Goto Index deriving (Eq, Ord, Show, Read)
 data ProblemStatement = ProblemStatement { permittedExits :: [Termination]
-                                         , inputColors, stampColors :: [Color]
+                                         , colors :: [Color]
                                          , allScannersHaveWhiteArrow :: Bool
                                          }
 
@@ -130,4 +130,4 @@ layoutScanner state self = do
 --   where colorObject
 
 main :: IO ()
-main = interact $ (show . length . flip runReaderT (ProblemStatement [Accept] [] [] True) . layouts . read)
+main = interact $ (show . length . flip runReaderT (ProblemStatement [Accept] [Red, Blue] True) . layouts . read)
