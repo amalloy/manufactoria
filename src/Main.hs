@@ -125,9 +125,16 @@ layoutScanner state self = do
           where reuse :: Search Destination
                 reuse = allowedExits <|> lift [Goto dst | dst <- reachable state]
 
--- colorings :: [Indexed (Node () ())] -> Search [Indexed (Node Color ArrowColor)]
--- colorings = mapM colorObject
---   where colorObject
+colorings :: [Indexed (Node () ())] -> Search [Indexed (Node Color ArrowColor)]
+colorings = mapM colorObject
+  where colorObject (Indexed ix node) = do
+          case node of
+            OneWay stamper -> do
+              colors <- asks colors
+              color <- lift colors
+              pure $ Indexed ix (OneWay (color <$ stamper))
+            ThreeWay arrows -> undefined
+              
 
 main :: IO ()
 main = interact $ (show . length . flip runReaderT (ProblemStatement [Accept] [Red, Blue] True) . layouts . read)
