@@ -95,12 +95,11 @@ allowedExits = do
   lift $ Terminate <$> exits
 
 reachable :: LayoutState -> [Index]
-reachable state = toList (_pending state) ++ toList (_placed state)
+reachable = toList . view (pending <> placed)
 
 explore :: LayoutState -> Search (LayoutState, Destination)
 explore state = lift $ do
-  let opens = _open state
-  dst <- toList opens
+  dst <- toList . view open $ state
   pure (state & over pending (S.insert dst)
               & over open (S.delete dst)
         , Goto dst)
