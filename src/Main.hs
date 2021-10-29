@@ -28,7 +28,7 @@ data ProblemStatement = ProblemStatement { permittedExits :: [Termination]
                                          }
 
 data Color = Red | Blue | Green | Yellow deriving (Enum, Eq, Ord, Show, Read)
-data ArrowColor = AnyColor | ColoredArrow Color deriving (Eq, Ord, Show, Read)
+data ArrowColor = White | ColoredArrow Color deriving (Eq, Ord, Show, Read)
 type Tape = Seq.Seq Color
 
 data Directed a = Directed Destination a deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
@@ -55,7 +55,7 @@ twoWayScanner :: ScannerArrow -> ScannerArrow -> Destination -> Decider
 twoWayScanner (leftColor, leftDest) (rightColor, rightDest) defaultDest =
   Decider [ Arrow (ColoredArrow leftColor) $ ScanResult { _consume = True, _next = leftDest }
           , Arrow (ColoredArrow rightColor) $ ScanResult { _consume = True, _next = rightDest }
-          , Arrow AnyColor $ ScanResult { _consume = False, _next = defaultDest }
+          , Arrow White $ ScanResult { _consume = False, _next = defaultDest }
           ]
 threeWayScanner :: Destination -> Destination -> ScannerArrow -> Decider
 threeWayScanner redDest blueDest (otherColor, otherDest) =
