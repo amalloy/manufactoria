@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Main where
 
@@ -76,6 +77,10 @@ data LayoutState = LayoutState { _pending, _placed, _open :: S.Set Index }
 makeLenses ''LayoutState
 type Search a = ReaderT ProblemStatement [] a
 
+moveNode :: Ord a => a -> Setter' s (S.Set a) -> Setter' s (S.Set a) -> s -> s
+moveNode idx from to =   over from (S.delete idx)
+                       . over to (S.insert idx)
+
 layouts :: Int -> Search [Indexed (Node () ())]
 layouts n = go $ LayoutState { _pending = S.singleton 0
                              , _placed = mempty
@@ -84,8 +89,7 @@ layouts n = go $ LayoutState { _pending = S.singleton 0
   where go state = case first (view pending state) of
           Nothing -> pure []
           Just nodeIndex -> do
-            let state' = state & over pending (S.delete nodeIndex)
-                               & over placed (S.insert nodeIndex)
+            let state' = state & moveNode nodeIndex pending placed
             (state'', object) <- layoutScanner state' nodeIndex <|> layoutStamper state' nodeIndex
             (Indexed nodeIndex object :) <$> go state''
 
@@ -100,9 +104,7 @@ reachable = toList . view (pending <> placed)
 explore :: LayoutState -> Search (LayoutState, Destination)
 explore state = lift $ do
   dst <- toList . view open $ state
-  pure (state & over pending (S.insert dst)
-              & over open (S.delete dst)
-        , Goto dst)
+  pure (state & moveNode dst open pending, Goto dst)
 
 
 layoutStamper :: LayoutState -> Index -> Search (LayoutState, Node () ())
