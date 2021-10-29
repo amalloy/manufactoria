@@ -9,7 +9,7 @@ module Main where
 
 import qualified Data.IntMap as M
 import qualified Data.Sequence as Seq
-import qualified Data.Set as S
+import qualified Data.IntSet as S
 import Control.Applicative ((<|>))
 import Control.Monad (replicateM, guard)
 import Control.Monad.Trans.State.Lazy
@@ -70,14 +70,11 @@ scanner2 green yellow = twoWayScanner (Green, green) (Yellow, yellow)
 scanner3 red blue green = threeWayScanner red blue (Green, green)
 scanner4 red blue yellow = threeWayScanner red blue (Yellow, yellow)
 
-first :: Foldable f => f a -> Maybe a
-first = getAlt . foldMap (Alt . Just)
-
-data LayoutState = LayoutState { _pending, _placed, _open :: S.Set Index }
+data LayoutState = LayoutState { _pending, _placed, _open :: S.IntSet }
 makeLenses ''LayoutState
 type Search a = ReaderT ProblemStatement [] a
 
-moveNode :: Ord a => a -> Setter' s (S.Set a) -> Setter' s (S.Set a) -> s -> s
+moveNode :: Index -> Setter' s S.IntSet -> Setter' s S.IntSet -> s -> s
 moveNode idx from to =   over from (S.delete idx)
                        . over to (S.insert idx)
 
@@ -86,10 +83,10 @@ layouts n = go $ LayoutState { _pending = S.singleton 0
                              , _placed = mempty
                              , _open = S.fromList [1..n]
                              }
-  where go state = case first (view pending state) of
+  where go state = case S.minView $ view pending state of
           Nothing -> pure []
-          Just nodeIndex -> do
-            let state' = state & moveNode nodeIndex pending placed
+          Just (nodeIndex, pending') -> do
+            let state' = state & set pending pending' & over placed (S.insert nodeIndex)
             (state'', object) <- layoutScanner state' nodeIndex <|> layoutStamper state' nodeIndex
             (Indexed nodeIndex object :) <$> go state''
 
@@ -99,11 +96,11 @@ allowedExits = do
   lift $ Terminate <$> exits
 
 reachable :: LayoutState -> [Index]
-reachable = toList . view (pending <> placed)
+reachable = S.toList . view (pending <> placed)
 
 explore :: LayoutState -> Search (LayoutState, Destination)
 explore state = lift $ do
-  dst <- toList . view open $ state
+  dst <- S.toList . view open $ state
   pure (state & moveNode dst open pending, Goto dst)
 
 
