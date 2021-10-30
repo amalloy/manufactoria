@@ -11,7 +11,7 @@ import qualified Data.IntMap as M
 import qualified Data.Sequence as Seq
 import qualified Data.IntSet as S
 import Control.Applicative ((<|>))
-import Control.Monad (replicateM, guard)
+import Control.Monad (replicateM, guard, (<=<))
 import Control.Monad.Trans.State.Lazy
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class
@@ -22,57 +22,38 @@ import Data.Monoid (Alt(..))
 type Index = Int
 data Termination = Accept | Reject | Break deriving (Eq, Ord, Show, Read)
 data Destination = Terminate Termination | Goto Index deriving (Eq, Ord, Show, Read)
-data ProblemStatement = ProblemStatement { permittedExits :: [Termination]
-                                         , colors :: [Color]
-                                         , allScannersHaveWhiteArrow :: Bool
-                                         }
 
 data Color = Red | Blue | Green | Yellow deriving (Enum, Eq, Ord, Show, Read)
 data ArrowColor = White | ColoredArrow Color deriving (Eq, Ord, Show, Read)
 type Tape = Seq.Seq Color
 
-data Directed a = Directed Destination a deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
-data Three a = Three { _left, _straight, _right :: a } deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
-makeLenses ''Three
-data Node stamper scanner = OneWay (Directed stamper) | ThreeWay (Three (Directed stamper))
+data Directed a = Directed { _dir :: Destination, _result :: a }
+  deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
+data Three a = Three { _left, _straight, _right :: a }
+  deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
+instance Applicative Three where
+  pure x = Three x x x
+  (Three f g h) <*> (Three x y z) = Three (f x) (g y) (h z)
+
+newtype ScannerTemplate = ScannerTemplate { _template :: Three ArrowColor } deriving (Eq, Ord, Show, Read)
+data Node stamper scanner = OneWay (Directed stamper)
+                          | ThreeWay (Three (Directed scanner))
                           deriving (Eq, Ord, Show, Read)
 data Indexed a = Indexed Index a deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
-makeLenses ''Indexed
 
-data ScanResult = ScanResult {_consume :: Bool, _next :: Destination} deriving (Eq, Ord, Show, Read)
-makeLenses ''ScanResult
-data Arrow = Arrow ArrowColor ScanResult deriving (Eq, Ord, Show, Read)
-newtype Decider = Decider {_arrows :: [Arrow]} deriving (Eq, Ord, Show, Read)
-makeLenses ''Decider
-data Transition = Stamp Color Destination | Scan Decider deriving (Eq, Ord, Show, Read)
-
-type Factory = M.IntMap Transition
-
-type Scanner = Destination -> Destination -> Destination -> Decider
-type ScannerArrow = (Color, Destination)
-
-twoWayScanner :: ScannerArrow -> ScannerArrow -> Destination -> Decider
-twoWayScanner (leftColor, leftDest) (rightColor, rightDest) defaultDest =
-  Decider [ Arrow (ColoredArrow leftColor) $ ScanResult { _consume = True, _next = leftDest }
-          , Arrow (ColoredArrow rightColor) $ ScanResult { _consume = True, _next = rightDest }
-          , Arrow White $ ScanResult { _consume = False, _next = defaultDest }
-          ]
-threeWayScanner :: Destination -> Destination -> ScannerArrow -> Decider
-threeWayScanner redDest blueDest (otherColor, otherDest) =
-  Decider [ Arrow (ColoredArrow Red) $ ScanResult {_consume = True, _next = redDest}
-          , Arrow (ColoredArrow Blue) $ ScanResult {_consume = True, _next = blueDest}
-          , Arrow (ColoredArrow otherColor) $ ScanResult {_consume = True, _next = otherDest}
-          ]
-
-scanner1, scanner2, scanner3, scanner4 :: Scanner
-scanner1 red blue = twoWayScanner (Red, red) (Blue, blue)
-scanner2 green yellow = twoWayScanner (Green, green) (Yellow, yellow)
-scanner3 red blue green = threeWayScanner red blue (Green, green)
-scanner4 red blue yellow = threeWayScanner red blue (Yellow, yellow)
-
+data ProblemStatement = ProblemStatement { permittedExits :: [Termination]
+                                         , colors :: [Color]
+                                         , scanners :: [ScannerTemplate]
+                                         , allScannersHaveWhiteArrow :: Bool
+                                         }
 data LayoutState = LayoutState { _pending, _placed, _open :: S.IntSet }
-makeLenses ''LayoutState
 type Search a = ReaderT ProblemStatement [] a
+
+makeLenses ''Directed
+makeLenses ''Three
+makeLenses ''ScannerTemplate
+makeLenses ''Indexed
+makeLenses ''LayoutState
 
 moveNode :: Index -> Setter' s S.IntSet -> Setter' s S.IntSet -> s -> s
 moveNode idx from to =   over from (S.delete idx)
@@ -125,6 +106,9 @@ layoutScanner state self = do
           where reuse :: Search Destination
                 reuse = allowedExits <|> lift [Goto dst | dst <- reachable state]
 
+hasWhiteArrow :: ScannerTemplate -> Bool
+hasWhiteArrow = (== White) . view (template . straight)
+
 colorings :: [Indexed (Node () ())] -> Search [Indexed (Node Color ArrowColor)]
 colorings = mapM colorObject
   where colorObject (Indexed ix node) = do
@@ -133,8 +117,23 @@ colorings = mapM colorObject
               colors <- asks colors
               color <- lift colors
               pure $ Indexed ix (OneWay (color <$ stamper))
-            ThreeWay arrows -> undefined
-              
+            ThreeWay layout -> do
+              templates <- asks scanners
+              let legalScanners = case view (straight . dir) layout of
+                    Goto ix' | ix == ix' -> filter (not . hasWhiteArrow) templates
+                    otherwise -> templates
+              ScannerTemplate template <- lift legalScanners
+              pure . Indexed ix . ThreeWay $ colorScanner <$> layout <*> template
+                where colorScanner :: Directed () -> ArrowColor -> Directed ArrowColor
+                      colorScanner = flip (<$)
+
+twoWayScanner left right = ScannerTemplate (Three (ColoredArrow left) White (ColoredArrow right))
+threeWayScanner left straight right = ScannerTemplate (Three (ColoredArrow left) (ColoredArrow straight) (ColoredArrow right))
+scanner1, scanner2, scanner3, scanner4 :: ScannerTemplate
+scanner1 = twoWayScanner Red Blue
+scanner2 = twoWayScanner Green Yellow
+scanner3 = threeWayScanner Red Green Blue
+scanner4 = threeWayScanner Red Yellow Blue
 
 main :: IO ()
-main = interact $ (show . length . flip runReaderT (ProblemStatement [Accept] [Red, Blue] True) . layouts . read)
+main = interact $ (show .length . flip runReaderT (ProblemStatement [Accept, Reject] [Red, Blue] [scanner1] True) . (colorings <=< layouts) . read)
