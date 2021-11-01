@@ -24,7 +24,11 @@ data Destination = Terminate Termination | Goto Index deriving (Eq, Ord, Show, R
 
 data Color = Red | Blue | Green | Yellow deriving (Enum, Eq, Ord, Show, Read)
 data ArrowColor = White | ColoredArrow Color deriving (Eq, Ord, Show, Read)
-type Tape = Seq.Seq Color
+instance Enum ArrowColor where
+  toEnum 0 = White
+  toEnum n = ColoredArrow (toEnum (n - 1))
+  fromEnum White = 0
+  fromEnum (ColoredArrow c) = fromEnum c + 1
 
 data Directed a = Directed { _dir :: Destination, _result :: a }
   deriving (Eq, Ord, Show, Read, Functor, Foldable, Traversable)
