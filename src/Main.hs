@@ -17,7 +17,6 @@ import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Class
 import Control.Lens hiding (Index, Indexed)
 import Data.Foldable (toList)
-import Data.Monoid (Alt(..))
 
 type Index = Int
 data Termination = Accept | Reject | Break deriving (Eq, Ord, Show, Read)
@@ -119,13 +118,13 @@ colorings = mapM colorObject
               pure $ Indexed ix (OneWay (color <$ stamper))
             ThreeWay layout -> do
               templates <- asks scanners
-              let legalScanners = case view (straight . dir) layout of
+              let legalScanners = case layout^.straight.dir of
                     Goto ix' | ix == ix' -> filter (not . hasWhiteArrow) templates
-                    otherwise -> templates
+                    _ -> templates
               ScannerTemplate template <- lift legalScanners
-              pure . Indexed ix . ThreeWay $ colorScanner <$> layout <*> template
-                where colorScanner :: Directed () -> ArrowColor -> Directed ArrowColor
-                      colorScanner = flip (<$)
+              pure . Indexed ix . ThreeWay $ colorScanner <$> template <*> layout
+                where colorScanner :: ArrowColor -> Directed a -> Directed ArrowColor
+                      colorScanner = (<$)
 
 twoWayScanner left right = ScannerTemplate (Three (ColoredArrow left) White (ColoredArrow right))
 threeWayScanner left straight right = ScannerTemplate (Three (ColoredArrow left) (ColoredArrow straight) (ColoredArrow right))
